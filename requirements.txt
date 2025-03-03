@@ -3,7 +3,8 @@ youtube-transcript-api==0.6.1
 openai-whisper==20231117
 deep-translator==1.11.4
 yt-dlp==2023.12.30
-torch==2.1.2
-torchaudio==2.1.2
-torchvision==0.16.2
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.1.2+cpu
+torchaudio==2.1.2+cpu
+torchvision==0.16.2+cpu
 ffmpeg-python==0.2.0
