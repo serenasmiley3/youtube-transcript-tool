@@ -51,21 +51,18 @@ def split_text(text, max_length=1000):
 
 def download_audio(video_id, output_path):
     try:
-        # First attempt with more options
+        # First attempt with basic options
         command = [
             'yt-dlp',
-            '--no-check-certificates',
             '--extract-audio',
-            '--format', 'bestaudio[ext=m4a]',
+            '--format', 'bestaudio',
             '--audio-format', 'mp3',
-            '--audio-quality', '0',
             '--output', output_path,
             '--no-warnings',
             '--no-playlist',
             '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            '--referer', 'https://www.youtube.com',
-            '--add-header', 'Accept-Language:en-US,en;q=0.9',
-            '--socket-timeout', '30',
+            '--geo-bypass',
+            '--no-check-certificate',
             f'https://www.youtube.com/watch?v={video_id}'
         ]
         
@@ -80,16 +77,18 @@ def download_audio(video_id, output_path):
         
         if process.returncode != 0:
             st.warning("First download attempt failed, trying alternative method...")
-            # Try alternative method
+            # Try alternative method with different format
             command_alt = [
                 'yt-dlp',
                 '--extract-audio',
-                '--format', 'bestaudio',
+                '--format', 'worstaudio',  # Try lowest quality audio
                 '--audio-format', 'mp3',
                 '--output', output_path,
                 '--no-warnings',
                 '--no-playlist',
-                '--cookies-from-browser', 'chrome',
+                '--geo-bypass',
+                '--no-check-certificate',
+                '--extractor-args', 'youtube:player_client=android',
                 f'https://www.youtube.com/watch?v={video_id}'
             ]
             process = subprocess.Popen(
