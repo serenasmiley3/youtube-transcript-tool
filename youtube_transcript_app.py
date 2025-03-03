@@ -48,34 +48,24 @@ def split_text(text, max_length=1000):
     """Split text into chunks of a specified maximum length."""
     return [text[i:i + max_length] for i in range(0, len(text), max_length)]
 
-# Load the model
-whisper_model = load_whisper_model()
 
-# Helper function to extract video ID from URL
-def extract_video_id(url):
-    """Extract the video ID from a YouTube URL."""
-    parsed_url = urlparse(url)
-    if parsed_url.hostname in ['www.youtube.com', 'youtube.com']:
-        if parsed_url.path == '/watch':
-            return parse_qs(parsed_url.query)['v'][0]
-    elif parsed_url.hostname == 'youtu.be':
-        return parsed_url.path[1:]
-    return None
-
-# Add this function after your other helper functions (like split_text and extract_video_id)
 def download_audio(video_id, output_path):
     try:
+        # First attempt with more options
         command = [
             'yt-dlp',
             '--no-check-certificates',
             '--extract-audio',
+            '--format', 'bestaudio[ext=m4a]',
             '--audio-format', 'mp3',
             '--audio-quality', '0',
             '--output', output_path,
             '--no-warnings',
-            '--quiet',
             '--no-playlist',
-            '--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            '--referer', 'https://www.youtube.com',
+            '--add-header', 'Accept-Language:en-US,en;q=0.9',
+            '--socket-timeout', '30',
             f'https://www.youtube.com/watch?v={video_id}'
         ]
         
@@ -89,7 +79,8 @@ def download_audio(video_id, output_path):
         stdout, stderr = process.communicate()
         
         if process.returncode != 0:
-            # Try alternative method if first fails
+            st.warning("First download attempt failed, trying alternative method...")
+            # Try alternative method
             command_alt = [
                 'yt-dlp',
                 '--extract-audio',
@@ -97,8 +88,8 @@ def download_audio(video_id, output_path):
                 '--audio-format', 'mp3',
                 '--output', output_path,
                 '--no-warnings',
-                '--quiet',
                 '--no-playlist',
+                '--cookies-from-browser', 'chrome',
                 f'https://www.youtube.com/watch?v={video_id}'
             ]
             process = subprocess.Popen(
@@ -120,6 +111,20 @@ def download_audio(video_id, output_path):
         st.error(f"Error downloading audio: {e}")
         return False
 
+# Load the model
+whisper_model = load_whisper_model()
+
+# Helper function to extract video ID from URL
+def extract_video_id(url):
+    """Extract the video ID from a YouTube URL."""
+    parsed_url = urlparse(url)
+    if parsed_url.hostname in ['www.youtube.com', 'youtube.com']:
+        if parsed_url.path == '/watch':
+            return parse_qs(parsed_url.query)['v'][0]
+    elif parsed_url.hostname == 'youtu.be':
+        return parsed_url.path[1:]
+    return None
+
 # Main Streamlit interface
 st.write("Enter a YouTube video URL to get its transcript and translations.")
 
@@ -127,12 +132,14 @@ st.write("Enter a YouTube video URL to get its transcript and translations.")
 video_url = st.text_input("YouTube Video URL")
 translate = st.checkbox("Translate to English if not in English", value=True)
 
+# In your main code, modify the transcript section to be more resilient:
 if video_url and whisper_model:
     video_id = extract_video_id(video_url)
     
     if video_id:
         try:
             # Try getting YouTube transcript first
+            transcript_available = False
             try:
                 transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
                 for transcript in transcript_list:
@@ -147,7 +154,6 @@ if video_url and whisper_model:
 
                     # If translation is requested and language isn't English
                     if translate and transcript_language != "en":
-                        # Start Google translation
                         with st.spinner("Getting quick Google translation..."):
                             try:
                                 text_chunks = split_text(transcript_text)
@@ -162,52 +168,46 @@ if video_url and whisper_model:
                                 st.text_area("Google Translated Text", google_translation, height=300)
                                 
                             except Exception as ex:
-                                st.error(f"Google translation error: {ex}")
+                                st.warning(f"Google translation error: {ex}")
+                    transcript_available = True
                     break
             
             except Exception as ex:
-                st.warning(f"No YouTube transcript available: {ex}")
+                st.warning("No YouTube transcript available. Proceeding with Whisper translation...")
                 transcript_language = None
                 transcript_text = None
 
-            # Proceed with Whisper processing for translation
-            if translate:
-                with st.spinner("Processing high-quality translation with Whisper (this may take a few minutes)..."):
-                    # Create temporary directory using tempfile
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        # Download audio with better error handling
-                        audio_file = os.path.join(temp_dir, f"{video_id}.mp3")
+            # Always proceed with Whisper processing
+            with st.spinner("Processing with Whisper (this may take a few minutes)..."):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    audio_file = os.path.join(temp_dir, f"{video_id}.mp3")
+                    
+                    if not download_audio(video_id, audio_file):
+                        st.error("Failed to download audio. Please try a different video or try again later.")
+                        st.stop()
+                    
+                    if not os.path.exists(audio_file):
+                        st.error("Audio file was not downloaded successfully.")
+                        st.stop()
+                    
+                    try:
+                        result = whisper_model.transcribe(
+                            audio_file,
+                            task="translate" if translate else "transcribe"
+                        )
+                        whisper_text = result["text"]
+                        whisper_language = result.get("language", "unknown")
                         
-                        if not download_audio(video_id, audio_file):
-                            st.error("Failed to download audio. Please try again.")
-                            st.stop()
+                        st.subheader("Whisper " + ("Translation" if translate else "Transcription"))
+                        if not transcript_language:
+                            st.info(f"Language detected: {whisper_language}")
+                        st.text_area("Whisper Text", whisper_text, height=300)
                         
-                        if not os.path.exists(audio_file):
-                            st.error("Audio file was not downloaded successfully.")
-                            st.stop()
-                        
-                        # Transcribe and translate with Whisper
-                        try:
-                            result = whisper_model.transcribe(
-                                audio_file,
-                                task="translate"
-                            )
-                            whisper_text = result["text"]
-                            whisper_language = result.get("language", "unknown")
-                            
-                            # Display Whisper translation
-                            st.subheader("High-Quality Translation (via Whisper)")
-                            if not transcript_language:
-                                st.info(f"Original language detected: {whisper_language}")
-                            st.text_area("Whisper Translated Text", whisper_text, height=300)
-                            
-                        except Exception as e:
-                            st.error(f"Error during Whisper processing: {e}")
+                    except Exception as e:
+                        st.error(f"Error during Whisper processing: {e}")
 
         except Exception as e:
             st.error(f"Error processing video: {str(e)}")
-            # Attempt to clean up any leftover temporary files
-            safe_cleanup("temp_audio")
     else:
         st.error("Invalid YouTube URL. Please check the URL and try again.")
 
