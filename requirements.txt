@@ -1,8 +1,9 @@
-streamlit
-youtube-transcript-api
-openai-whisper
-deep-translator
-yt-dlp
-torch
-torchvision
-torchaudio
+streamlit==1.31.0
+youtube-transcript-api==0.6.1
+openai-whisper==20231117
+deep-translator==1.11.4
+yt-dlp==2023.12.30
+torch==2.1.2
+torchaudio==2.1.2
+torchvision==0.16.2
+ffmpeg-python==0.2.0
