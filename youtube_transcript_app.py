@@ -62,6 +62,64 @@ def extract_video_id(url):
         return parsed_url.path[1:]
     return None
 
+# Add this function after your other helper functions (like split_text and extract_video_id)
+def download_audio(video_id, output_path):
+    try:
+        command = [
+            'yt-dlp',
+            '--no-check-certificates',
+            '--extract-audio',
+            '--audio-format', 'mp3',
+            '--audio-quality', '0',
+            '--output', output_path,
+            '--no-warnings',
+            '--quiet',
+            '--no-playlist',
+            '--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            f'https://www.youtube.com/watch?v={video_id}'
+        ]
+        
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
+        )
+        
+        stdout, stderr = process.communicate()
+        
+        if process.returncode != 0:
+            # Try alternative method if first fails
+            command_alt = [
+                'yt-dlp',
+                '--extract-audio',
+                '--format', 'bestaudio',
+                '--audio-format', 'mp3',
+                '--output', output_path,
+                '--no-warnings',
+                '--quiet',
+                '--no-playlist',
+                f'https://www.youtube.com/watch?v={video_id}'
+            ]
+            process = subprocess.Popen(
+                command_alt,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            stdout, stderr = process.communicate()
+            
+        if process.returncode != 0:
+            st.error("Could not download audio. YouTube might be blocking automated access.")
+            st.error(f"Error details: {stderr}")
+            return False
+            
+        return True
+    
+    except Exception as e:
+        st.error(f"Error downloading audio: {e}")
+        return False
+
 # Main Streamlit interface
 st.write("Enter a YouTube video URL to get its transcript and translations.")
 
@@ -117,31 +175,34 @@ if video_url and whisper_model:
                 with st.spinner("Processing high-quality translation with Whisper (this may take a few minutes)..."):
                     # Create temporary directory using tempfile
                     with tempfile.TemporaryDirectory() as temp_dir:
-                        # Download audio
+                        # Download audio with better error handling
                         audio_file = os.path.join(temp_dir, f"{video_id}.mp3")
-                        yt_dlp_command = (
-                            f'yt-dlp --extract-audio --audio-format mp3 '
-                            f'--postprocessor-args "-ar 44100 -ac 2" '
-                            f'--output "{audio_file}" '
-                            f'https://www.youtube.com/watch?v={video_id}'
-                        )
-                        subprocess.run(yt_dlp_command, check=True, shell=True)
+                        
+                        if not download_audio(video_id, audio_file):
+                            st.error("Failed to download audio. Please try again.")
+                            st.stop()
+                        
+                        if not os.path.exists(audio_file):
+                            st.error("Audio file was not downloaded successfully.")
+                            st.stop()
                         
                         # Transcribe and translate with Whisper
-                        result = whisper_model.transcribe(
-                            audio_file,
-                            task="translate"
-                        )
-                        whisper_text = result["text"]
-                        whisper_language = result.get("language", "unknown")
-                        
-                        # No need to manually clean up as tempfile will handle it
-
-                    # Display Whisper translation
-                    st.subheader("High-Quality Translation (via Whisper)")
-                    if not transcript_language:
-                        st.info(f"Original language detected: {whisper_language}")
-                    st.text_area("Whisper Translated Text", whisper_text, height=300)
+                        try:
+                            result = whisper_model.transcribe(
+                                audio_file,
+                                task="translate"
+                            )
+                            whisper_text = result["text"]
+                            whisper_language = result.get("language", "unknown")
+                            
+                            # Display Whisper translation
+                            st.subheader("High-Quality Translation (via Whisper)")
+                            if not transcript_language:
+                                st.info(f"Original language detected: {whisper_language}")
+                            st.text_area("Whisper Translated Text", whisper_text, height=300)
+                            
+                        except Exception as e:
+                            st.error(f"Error during Whisper processing: {e}")
 
         except Exception as e:
             st.error(f"Error processing video: {str(e)}")
