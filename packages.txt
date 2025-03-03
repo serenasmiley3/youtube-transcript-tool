@@ -1,2 +1,2 @@
-﻿ffmpeg-python
+﻿python3-ffmpeg
 python3-pip
