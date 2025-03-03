@@ -4,3 +4,5 @@ openai-whisper
 deep-translator
 yt-dlp
 torch
+torchvision
+torchaudio
