@@ -1,0 +1,6 @@
+streamlit
+youtube-transcript-api
+openai-whisper
+deep-translator
+yt-dlp
+torch
